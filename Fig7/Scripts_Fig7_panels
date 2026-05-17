@@ -1,0 +1,262 @@
+```r
+# Figure 7A
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+data_dir <- "<data_directory>"
+mags_file <- file.path(data_dir, "<MAG_summary_table.csv>") # Supplementary Table S3
+mags_data <- read.csv(mags_file)
+
+filtered_mags <- mags_data %>%
+  filter(
+    Completeness >= 80,
+    Contamination <= 5,
+    prok_species == "Escherichia coli",
+    site_specific %in% c("Ic", "Ax", "N")
+  ) %>%
+  drop_na(subject_id) %>%
+  mutate(
+    hours_category = cut(
+      new_hrs_last_bath,
+      breaks = c(0, 12, 24, 36, 48, Inf),
+      labels = c("≤12h", "13–24h", "25–36h", "37–48h", "48+h"),
+      include.lowest = TRUE
+    ),
+    ST_category = case_when(
+      MLST == 131 ~ "ST131",
+      MLST == 93 ~ "ST93",
+      TRUE ~ "Other"
+    )
+  ) %>%
+  arrange(subject_id, visit)
+
+filtered_mags$visit <- factor(filtered_mags$visit, levels = c("T3", "T2", "T1"))
+levels(filtered_mags$visit) <- c("Sample 3", "Sample 2", "Sample 1")
+
+filtered_mags <- filtered_mags %>%
+  group_by(subject_id, site_specific) %>%
+  arrange(visit) %>%
+  mutate(
+    persistence_event = case_when(
+      ST_category %in% c("ST131", "ST93") &
+        !is.na(lag(new_hrs_last_bath)) &
+        lag(new_hrs_last_bath) < new_hrs_last_bath ~ TRUE,
+      TRUE ~ FALSE
+    )
+  ) %>%
+  ungroup()
+
+# Optional: manually flag cases where complete MAG recovery was limited.
+manual_stars <- filtered_mags %>%
+  filter(
+    (subject_id == "<subject_id_1>" & site_specific == "Ax" & visit == "Sample 1") |
+      (subject_id == "<subject_id_2>" & site_specific == "Ic" & visit == "Sample 1") |
+      (subject_id == "<subject_id_2>" & site_specific == "Ax" & visit == "Sample 1")
+  ) %>%
+  mutate(persistence_event = TRUE)
+
+final_data <- filtered_mags %>%
+  bind_rows(manual_stars) %>%
+  distinct() %>%
+  mutate(
+    # Use anonymized subject IDs already provided in the released table.
+    subject_label = subject_id
+  )
+
+set.seed(123)
+
+g <- ggplot(final_data, aes(x = subject_label, y = visit, color = hours_category, shape = ST_category)) +
+  geom_jitter(size = 9, alpha = 0.9, width = 0, height = 0) +
+  geom_text(
+    data = final_data %>% filter(persistence_event == TRUE),
+    aes(label = "*"),
+    color = "red",
+    size = 9,
+    fontface = "bold",
+    vjust = 1.8
+  ) +
+  facet_wrap(
+    ~site_specific,
+    scales = "free_x",
+    labeller = labeller(
+      site_specific = c(
+        Ic = "Inguinal crease (Ic)",
+        Ax = "Axilla (Ax)",
+        N = "Nares (N)"
+      )
+    )
+  ) +
+  geom_hline(
+    yintercept = levels(final_data$visit),
+    linetype = "dashed",
+    color = "gray80",
+    linewidth = 0.4
+  ) +
+  scale_color_manual(
+    values = c(
+      "≤12h" = "#b3e3f9",
+      "13–24h" = "#077ad4",
+      "25–36h" = "#055594",
+      "37–48h" = "#023863",
+      "48+h" = "#01192b"
+    )
+  ) +
+  scale_shape_manual(values = c("ST131" = 16, "ST93" = 17, "Other" = 15)) +
+  labs(
+    color = "Hours Since Last Bath",
+    shape = "MLST Category"
+  ) +
+  guides(
+    color = guide_legend(override.aes = list(size = 6)),
+    shape = guide_legend(override.aes = list(size = 6))
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    strip.background = element_rect(fill = "skyblue", color = "black", linewidth = 0.8),
+    strip.text = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 0.5, face = "bold", size = 10),
+    axis.text.y = element_text(face = "bold", size = 12),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold", size = 13),
+    legend.text = element_text(size = 11),
+    legend.box = "horizontal",
+    panel.grid.major = element_line(color = "gray90", linewidth = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+print(g)
+
+# ggsave("<figure7A_output_file.png>", plot = g, width = 13, height = 4.5, dpi = 600)
+```
+
+```r
+# Figure 7B
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+data_dir <- "<data_directory>"
+mags_file <- file.path(data_dir, "<MAG_summary_table.csv>") # Supplementary Table S3
+mags_data <- read.csv(mags_file)
+
+filtered_mags <- mags_data %>%
+  filter(
+    Completeness >= 80,
+    Contamination <= 5,
+    prok_species == "Staphylococcus epidermidis",
+    site_specific %in% c("Ic", "Ax")
+  ) %>%
+  drop_na(subject_id) %>%
+  mutate(
+    hours_category = cut(
+      new_hrs_last_bath,
+      breaks = c(0, 12, 24, 36, 48, Inf),
+      labels = c("≤12h", "13–24h", "25–36h", "37–48h", "48+h"),
+      include.lowest = TRUE
+    ),
+    ST_category = ifelse(MLST == 2, "ST2", "Other")
+  ) %>%
+  arrange(subject_id, visit)
+
+filtered_mags$visit <- factor(filtered_mags$visit, levels = c("T3", "T2", "T1"))
+levels(filtered_mags$visit) <- c("Sample 3", "Sample 2", "Sample 1")
+
+filtered_mags <- filtered_mags %>%
+  group_by(subject_id, site_specific) %>%
+  arrange(visit) %>%
+  mutate(
+    persistence_event = case_when(
+      ST_category == "ST2" &
+        !is.na(lag(ST_category)) & lag(ST_category) == "ST2" &
+        !is.na(lag(new_hrs_last_bath)) & lag(new_hrs_last_bath) < new_hrs_last_bath ~ TRUE,
+      TRUE ~ FALSE
+    )
+  ) %>%
+  ungroup()
+
+# Optional: manually flag an additional persistence case if needed.
+extra_star <- data.frame(
+  subject_id = "<subject_id>",
+  visit = factor("Sample 1", levels = levels(filtered_mags$visit)),
+  site_specific = "Ic"
+)
+
+set.seed(123)
+
+g <- ggplot(filtered_mags, aes(x = subject_id, y = visit, color = hours_category, shape = ST_category)) +
+  geom_jitter(size = 9, alpha = 0.9, width = 0, height = 0) +
+  geom_text(
+    data = filtered_mags %>% filter(persistence_event == TRUE),
+    aes(label = "*"),
+    color = "red",
+    size = 9,
+    fontface = "bold",
+    vjust = 1.8
+  ) +
+  geom_text(
+    data = extra_star,
+    aes(x = subject_id, y = visit),
+    label = "*",
+    color = "red",
+    size = 9,
+    fontface = "bold",
+    vjust = 1.8,
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(
+    ~site_specific,
+    scales = "free_x",
+    labeller = labeller(
+      site_specific = c(
+        Ic = "Inguinal crease (Ic)",
+        Ax = "Axilla (Ax)"
+      )
+    )
+  ) +
+  geom_hline(
+    yintercept = levels(filtered_mags$visit),
+    linetype = "dashed",
+    color = "gray80",
+    linewidth = 0.4
+  ) +
+  scale_color_manual(
+    values = c(
+      "≤12h" = "#b3e3f9",
+      "13–24h" = "#077ad4",
+      "25–36h" = "#055594",
+      "37–48h" = "#023863",
+      "48+h" = "#01192b"
+    )
+  ) +
+  scale_shape_manual(values = c("ST2" = 16, "Other" = 15)) +
+  labs(
+    color = "Hours Since Last Bath",
+    shape = "MLST Category"
+  ) +
+  guides(
+    color = guide_legend(override.aes = list(size = 6)),
+    shape = guide_legend(override.aes = list(size = 6))
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    strip.background = element_rect(fill = "skyblue", color = "black", linewidth = 0.8),
+    strip.text = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold", size = 11),
+    axis.text.y = element_text(face = "bold", size = 12),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold", size = 13),
+    legend.text = element_text(size = 11),
+    legend.box = "horizontal",
+    panel.grid.major = element_line(color = "gray90", linewidth = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+print(g)
+
+# ggsave("<figure7B_output_file.png>", plot = g, width = 13, height = 4.5, dpi = 600)
+```

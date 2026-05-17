@@ -1,0 +1,230 @@
+# Figure 1B 
+```{r}
+# Figure 1B
+
+library(phyloseq)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(readr)
+
+color_pall <- c(
+  "Archaea" = "#000000",
+  "Bacteria (Others)" = "black",
+  "Actinomycetota (Other)" = "#FEEBE2",
+  "  • C. tuberculostearicum" = "#F768A1",
+  "  • C. accolens" = "#F34C12",
+  "  • C. acnes" = "#D6604D",
+  "  • Corynebacterium (Other)" = "#FBB4B9",
+  "  • Cutibacterium (Other)" = "#AE017E",
+  "Bacillota (Other)" = "#EFF3FF",
+  "  • Staphylococcus" = "#2171B5",
+  "    • S. epidermidis" = "#6699ff",
+  "    • S. aureus" = "#06C9F9",
+  "  • Enterococcus" = "#A0CDF4",
+  "Pseudomonadota (Other)" = "#E5F5E0",
+  "  • P. mirabilis" = "#b3fbcf",
+  "  • E. coli" = "#C7EA46",
+  "  • Providencia stuartii" = "#3F9B0B",
+  "  • Pseudomonas aeruginosa" = "#03fb64",
+  "  • Klebsiella pneumoniae" = "#145A32",
+  "Bacteroidota" = "grey",
+  "Campylobacterota" = "orange",
+  "Eukaryota (Others)" = "purple",
+  "  • Malassezia" = "#811293",
+  "  • Candida albicans" = "#3F007D",
+  "Viruses" = "#FAF404"
+)
+
+# Input and output files
+ps_rds   <- "<relative_abundance_phyloseq_object.rds>"
+meta_csv <- "<metadata_file.csv>" # Metadata file corresponding to Supplementary Table S1
+out_csv  <- "<target_level_abundance_output.csv>"
+
+stopifnot(file.exists(ps_rds))
+ra <- readRDS(ps_rds)
+if (!inherits(ra, "phyloseq")) stop("Loaded object is not a phyloseq object.")
+
+tax_df <- as.data.frame(tax_table(ra), stringsAsFactors = FALSE)
+
+colnames(tax_df) <- sub("^Domain$", "Kingdom", colnames(tax_df), ignore.case = TRUE)
+colnames(tax_df) <- sub("^rank2$",  "Phylum",  colnames(tax_df), ignore.case = TRUE)
+
+otu_df <- as.data.frame(otu_table(ra), stringsAsFactors = FALSE)
+if (!taxa_are_rows(ra)) otu_df <- t(otu_df)
+
+if (!identical(rownames(tax_df), rownames(otu_df))) {
+  otu_df <- otu_df[match(rownames(tax_df), rownames(otu_df)), , drop = FALSE]
+}
+
+df <- cbind(tax_df, otu_df)
+
+n_tax <- ncol(tax_df)
+if (n_tax == 0) stop("No taxonomy columns found in the phyloseq object.")
+if (ncol(df) <= n_tax) stop("No sample columns found beyond taxonomy columns.")
+
+df_sorted <- df[
+  order(rowSums(df[, (n_tax + 1):ncol(df)], na.rm = TRUE), decreasing = TRUE),
+]
+
+stopifnot(file.exists(meta_csv))
+ready_metadata <- read_csv(meta_csv, show_col_types = FALSE) |> as.data.frame()
+
+if (!("library_id" %in% names(ready_metadata))) {
+  stop("Metadata must contain a 'library_id' column.")
+}
+
+ready_metadata <- ready_metadata |> distinct(library_id, .keep_all = TRUE)
+
+TargetLvl1 <- function(df, mytab) {
+  id_cols <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+  missing <- setdiff(id_cols, names(df))
+  if (length(missing)) stop("Missing taxonomy columns: ", paste(missing, collapse = ", "))
+
+  df$Species <- gsub("_", " ", as.character(df$Species))
+
+  value_cols <- setdiff(names(df), id_cols)
+  if (length(value_cols) == 0) {
+    stop("No sample columns found. Ensure columns beyond taxonomy are library IDs.")
+  }
+
+  df_long <- df |>
+    pivot_longer(
+      cols = tidyselect::all_of(value_cols),
+      names_to = "sample_id",
+      values_to = "value"
+    ) |>
+    mutate(
+      Target = case_when(
+        Kingdom == "Viruses"   ~ "Viruses",
+        Kingdom == "Eukaryota" ~ "Eukaryota (Others)",
+        Kingdom == "Bacteria"  ~ "Bacteria (Others)",
+        Kingdom == "Archaea"   ~ "Archaea",
+        TRUE                   ~ Kingdom
+      )
+    )
+
+  df_long$Target[df_long$Phylum == "Actinomycetota"] <- "Actinomycetota (Other)"
+  df_long$Target[df_long$Genus == "Corynebacterium"] <- "  • Corynebacterium (Other)"
+  df_long$Target[df_long$Genus == "Corynebacterium" & df_long$Species == "tuberculostearicum"] <- "  • C. tuberculostearicum"
+  df_long$Target[df_long$Genus == "Corynebacterium" & df_long$Species == "accolens"] <- "  • C. accolens"
+  df_long$Target[df_long$Genus == "Cutibacterium"] <- "  • Cutibacterium (Other)"
+  df_long$Target[df_long$Genus == "Cutibacterium" & df_long$Species == "acnes"] <- "  • C. acnes"
+
+  df_long$Target[df_long$Phylum == "Bacillota"] <- "Bacillota (Other)"
+  df_long$Target[df_long$Genus == "Staphylococcus"] <- "  • Staphylococcus"
+  df_long$Target[df_long$Genus == "Staphylococcus" & df_long$Species == "epidermidis"] <- "    • S. epidermidis"
+  df_long$Target[df_long$Genus == "Staphylococcus" & df_long$Species == "aureus"] <- "    • S. aureus"
+  df_long$Target[df_long$Genus == "Enterococcus"] <- "  • Enterococcus"
+
+  df_long$Target[df_long$Phylum == "Pseudomonadota"] <- "Pseudomonadota (Other)"
+  df_long$Target[df_long$Genus == "Proteus" & df_long$Species == "mirabilis"] <- "  • P. mirabilis"
+  df_long$Target[df_long$Genus == "Escherichia" & df_long$Species == "coli"] <- "  • E. coli"
+  df_long$Target[df_long$Genus == "Providencia" & df_long$Species == "stuartii"] <- "  • Providencia stuartii"
+  df_long$Target[df_long$Genus == "Pseudomonas" & df_long$Species == "aeruginosa"] <- "  • Pseudomonas aeruginosa"
+  df_long$Target[df_long$Genus == "Klebsiella" & df_long$Species == "pneumoniae"] <- "  • Klebsiella pneumoniae"
+
+  df_long$Target[df_long$Phylum == "Bacteroidota"] <- "Bacteroidota"
+  df_long$Target[df_long$Phylum == "Campylobacterota"] <- "Campylobacterota"
+
+  df_long$Target[df_long$Genus == "Malassezia"] <- "  • Malassezia"
+  df_long$Target[df_long$Genus == "Candida" & df_long$Species == "albicans"] <- "  • Candida albicans"
+
+  target_taxa <- names(color_pall)
+  df_long$Target <- factor(df_long$Target, levels = target_taxa)
+
+  out <- df_long |>
+    select(sample_id, Target, value) |>
+    group_by(sample_id, Target) |>
+    summarise(value = sum(value, na.rm = TRUE), .groups = "drop")
+
+  md <- as.data.frame(mytab, stringsAsFactors = FALSE)
+  if (!("library_id" %in% names(md))) stop("Metadata must contain 'library_id'.")
+
+  md <- distinct(md, library_id, .keep_all = TRUE)
+
+  out |>
+    left_join(md, by = c("sample_id" = "library_id")) |>
+    rename(library_id = sample_id)
+}
+
+df3 <- TargetLvl1(df_sorted, ready_metadata)
+
+message("df3 rows: ", nrow(df3), " | columns: ", ncol(df3))
+print(utils::head(df3, 10))
+
+try({
+  write_csv(df3, out_csv)
+  message("Wrote: ", out_csv)
+}, silent = TRUE)
+
+desired_order <- names(color_pall)
+
+df3$Target <- factor(df3$Target, levels = desired_order)
+df3$site_specific <- factor(df3$site_specific, levels = c("<site_code_1>", "<site_code_2>"))
+
+# Use anonymized subject IDs already provided in the metadata.
+df3$subject_id_plot <- df3$subject_id
+
+is_genus_or_species <- function(x) {
+  grepl("^\\s*•\\s*[A-Z][a-z]+(\\s*\\(Other\\))?$", x) ||
+    grepl("^\\s*•\\s*(?:[A-Z]\\.|[A-Z][a-z]+)\\s+[a-z]+", x)
+}
+
+lvl <- levels(df3$Target)
+target_labels <- setNames(
+  lapply(lvl, function(x) {
+    if (is_genus_or_species(x)) {
+      bquote(italic(.(x)))
+    } else {
+      x
+    }
+  }),
+  lvl
+)
+
+df3$site_specific <- factor(
+  df3$site_specific,
+  levels = c("<site_code_1>", "<site_code_2>"),
+  labels = c("<site_label_1>", "<site_label_2>")
+)
+
+p_ra_overall_fig1 <- ggplot(df3[df3$site_specific != "", ]) +
+  aes(x = subject_id_plot, y = value, fill = Target) +
+  geom_bar(stat = "identity", position = "fill", width = 0.8) +
+  ylab("Relative Abundance (%)") +
+  scale_y_continuous(
+    breaks = c(0, 0.25, 0.5, 0.75, 1),
+    labels = c("0", "", "50", "", "100"),
+    limits = c(0, 1),
+    expand = expansion(mult = c(0, 0))
+  ) +
+  facet_grid(visit ~ site_specific, scales = "free_x", space = "free_x") +
+  scale_fill_manual(
+    name = "Taxa",
+    values = color_pall,
+    labels = target_labels
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7),
+    axis.title.y = element_text(size = 12),
+    axis.text.y = element_text(size = 10),
+    strip.text.x = element_text(face = "bold", size = 10),
+    strip.text.y = element_text(face = "bold", size = 10, angle = 0),
+    strip.background = element_rect(fill = "white", color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
+    legend.position = "right",
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 9),
+    legend.key.size = unit(0.5, "cm"),
+    legend.box = "vertical"
+  ) +
+  guides(fill = guide_legend(ncol = 1, reverse = FALSE))
+
+p_ra_overall_fig1
+```

@@ -1,0 +1,348 @@
+```r
+# Figure 6A
+
+library(ggplot2)
+library(dplyr)
+library(readxl)
+
+mags_data <- read.csv("<MAG_summary_table.csv>") # Supplementary Table S3
+wgs_shared_data <- read_excel("<isolate_WGS_metadata_table.xlsx>") # Supplementary Table S2
+
+selected_species <- c("Enterococcus faecalis", "Proteus mirabilis")
+selected_sites <- c("Ic_Ax")
+
+mags_data <- mags_data %>%
+  mutate(site_specific = ifelse(site_specific %in% c("Ic", "Ax"), "Ic_Ax", site_specific))
+
+wgs_shared_data <- wgs_shared_data %>%
+  mutate(site_specific = ifelse(site_specific %in% c("Ic", "Ax"), "Ic_Ax", site_specific))
+
+wgs_shared_data_filtered <- wgs_shared_data %>%
+  filter(species %in% selected_species, site_specific %in% selected_sites)
+
+mags_filtered <- mags_data %>%
+  filter(prok_species %in% selected_species, site_specific %in% selected_sites)
+
+combined_data <- mags_filtered %>%
+  select(subject_id, prok_species, site_specific) %>%
+  mutate(data_type = "MAG") %>%
+  rename(species = prok_species) %>%
+  bind_rows(
+    wgs_shared_data_filtered %>%
+      select(subject_id, species, site_specific) %>%
+      mutate(data_type = "WGS")
+  ) %>%
+  mutate(
+    subject_label = subject_id,
+    species = factor(species, levels = selected_species)
+  ) %>%
+  group_by(subject_id, species, site_specific) %>%
+  mutate(combined_type = ifelse(n_distinct(data_type) > 1, "Both", data_type)) %>%
+  ungroup()
+
+panel1_sup_ef_pm <- ggplot(combined_data, aes(x = subject_label, y = species)) +
+  geom_point(aes(shape = combined_type), size = 5, color = "lightgreen") +
+  facet_wrap(~ site_specific, labeller = as_labeller(c("Ic_Ax" = "Ic/Ax")), nrow = 1) +
+  scale_shape_manual(
+    values = c("MAG" = 16, "WGS" = 17, "Both" = 15),
+    labels = c("MAG", "Isolate", "Both"),
+    breaks = c("MAG", "WGS", "Both")
+  ) +
+  labs(x = "Subject ID", y = "Species") +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.text = element_text(size = 9),
+    legend.title = element_blank(),
+    legend.box = "horizontal",
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.y = element_text(face = "bold", size = 11),
+    panel.background = element_rect(fill = "darkblue"),
+    plot.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "white", linetype = "dashed", linewidth = 0.8),
+    panel.grid.minor = element_line(color = "white", linetype = "dashed", linewidth = 0.5),
+    strip.background = element_rect(fill = "gray90"),
+    strip.text = element_text(face = "bold", size = 10, color = "black"),
+    plot.margin = margin(t = 10, r = 10, b = 10, l = 10)
+  )
+
+panel1_sup_ef_pm
+
+# ggsave("<figure6A_output_file.png>", panel1_sup_ef_pm, width = 10, height = 2)
+```
+
+```r
+# Figure 6B
+
+library(readxl)
+library(tidyverse)
+
+df <- read_excel("<isolate_WGS_metadata_table.xlsx>") # Supplementary Table S2
+
+amr_gene_cols <- df %>%
+  select(where(~ all(.x %in% c(0, 1, NA)))) %>%
+  colnames()
+
+id_cols <- c("samples", "Facility", "subject_id", "species")
+
+df_long <- df %>%
+  select(all_of(c(id_cols, amr_gene_cols))) %>%
+  pivot_longer(
+    cols = all_of(amr_gene_cols),
+    names_to = "AMR_gene",
+    values_to = "presence"
+  ) %>%
+  filter(
+    presence == 1,
+    species %in% c("Proteus mirabilis", "Enterococcus faecalis")
+  ) %>%
+  distinct(subject_id, species, AMR_gene)
+
+# Use anonymized subject IDs already provided in the released table.
+
+n_genes <- length(unique(df_long$AMR_gene))
+palette_genes <- scales::hue_pal()(n_genes)
+
+p_amr_pm_ef <- ggplot(df_long, aes(x = subject_id, y = species, color = AMR_gene)) +
+  geom_point(
+    size = 4,
+    alpha = 0.85,
+    shape = 17,
+    stroke = 0.6,
+    position = position_jitter(width = 0.15, height = 0.15)
+  ) +
+  scale_color_manual(values = palette_genes) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.background = element_rect(fill = "white", color = "grey80", linewidth = 1),
+    plot.background = element_rect(fill = "white", color = NA),
+    axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 10),
+    axis.text.y = element_text(face = "bold", size = 10),
+    axis.ticks = element_blank(),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(size = 8, face = "bold"),
+    legend.text = element_text(size = 8),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  ) +
+  labs(x = NULL, y = NULL, color = "AMR Genes")
+
+p_amr_pm_ef
+
+# ggsave("<figure6B_output_file.png>", p_amr_pm_ef, width = 10, height = 1)
+```
+
+```r
+# Figure 6C
+
+library(pheatmap)
+library(grid)
+
+snp_matrix <- read.csv(
+  "<snp_distance_matrix_enterococcus_faecalis.csv>",
+  row.names = 1,
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+snp_matrix <- as.matrix(snp_matrix)
+if (!is.numeric(snp_matrix)) stop("SNP matrix is not numeric.")
+
+max_val <- max(snp_matrix, na.rm = TRUE)
+breaks <- c(0, 10, 50, 100, max_val)
+colors <- colorRampPalette(c("white", "skyblue", "#bd98d1", "#6002f9"))(length(breaks) - 1)
+
+heatmap <- pheatmap(
+  snp_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  clustering_method = "average",
+  color = colors,
+  breaks = breaks,
+  display_numbers = TRUE,
+  number_format = "%.0f",
+  number_color = "black",
+  fontsize_number = 10,
+  fontsize_row = 13,
+  fontsize_col = 13,
+  cellwidth = 22,
+  cellheight = 22,
+  legend = FALSE,
+  border_color = "grey80"
+)
+
+width_in_inches <- convertWidth(sum(heatmap$gtable$widths), "in", valueOnly = TRUE)
+height_in_inches <- convertHeight(sum(heatmap$gtable$heights), "in", valueOnly = TRUE)
+
+png(
+  "<figure6C_output_file.png>",
+  width = width_in_inches,
+  height = height_in_inches,
+  units = "in",
+  res = 150
+)
+
+grid.newpage()
+grid.draw(heatmap$gtable)
+dev.off()
+```
+
+```r
+# Helper function for Figures 6F and 6H
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+make_snp_pairwise_df <- function(snp_matrix_path, metadata_path) {
+  snp_df <- read.csv(snp_matrix_path, row.names = 1, check.names = FALSE, stringsAsFactors = FALSE)
+  snp_matrix <- as.matrix(snp_df)
+  storage.mode(snp_matrix) <- "numeric"
+
+  stopifnot(nrow(snp_matrix) == ncol(snp_matrix))
+  stopifnot(identical(rownames(snp_matrix), colnames(snp_matrix)))
+
+  sample_ids <- rownames(snp_matrix)
+
+  metadata <- read.csv(metadata_path, stringsAsFactors = FALSE)
+  stopifnot(all(c("sample_id", "subject_id", "facility_id") %in% names(metadata)))
+
+  idx <- which(upper.tri(snp_matrix), arr.ind = TRUE)
+
+  tibble(
+    i = idx[, 1],
+    j = idx[, 2],
+    sample1 = sample_ids[i],
+    sample2 = sample_ids[j],
+    snp_distance = snp_matrix[cbind(idx[, 1], idx[, 2])]
+  ) %>%
+    left_join(
+      metadata %>% select(sample_id, subject_id, facility_id),
+      by = c("sample1" = "sample_id")
+    ) %>%
+    rename(subject1 = subject_id, facility1 = facility_id) %>%
+    left_join(
+      metadata %>% select(sample_id, subject_id, facility_id),
+      by = c("sample2" = "sample_id")
+    ) %>%
+    rename(subject2 = subject_id, facility2 = facility_id) %>%
+    mutate(
+      pair_type = case_when(
+        subject1 == subject2 ~ "Same Subject",
+        subject1 != subject2 & facility1 == facility2 ~ "Different Subjects (Same Facility)",
+        subject1 != subject2 & facility1 != facility2 ~ "Different Subjects (Different Facilities)",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    tidyr::drop_na(pair_type)
+}
+```
+
+```r
+# Figure 6F
+
+pairwise_df <- make_snp_pairwise_df(
+  snp_matrix_path = "<snp_distance_matrix_proteus_mirabilis.csv>",
+  metadata_path = "<sample_metadata_file.csv>"
+)
+
+fill_colors <- c(
+  "Same Subject" = "black",
+  "Different Subjects (Same Facility)" = "black",
+  "Different Subjects (Different Facilities)" = "black"
+)
+
+p_same <- ggplot(filter(pairwise_df, pair_type == "Same Subject"),
+                 aes(x = snp_distance, fill = pair_type)) +
+  geom_histogram(binwidth = 5, boundary = 0, color = "black", alpha = 0.9) +
+  geom_vline(xintercept = 30, linetype = "dashed", color = "#d73027", linewidth = 1.1) +
+  scale_fill_manual(values = fill_colors) +
+  scale_x_continuous(limits = c(0, 30), breaks = seq(0, 30, by = 5)) +
+  labs(x = "SNP Distance", y = "Sample Pairs (Same Subject)") +
+  theme_minimal(base_size = 15) +
+  theme(panel.grid = element_blank(), axis.line = element_line(color = "black"), legend.position = "none")
+
+p_same_fac <- ggplot(filter(pairwise_df, pair_type == "Different Subjects (Same Facility)"),
+                     aes(x = snp_distance, fill = pair_type)) +
+  geom_histogram(binwidth = 10, boundary = 0, color = "black", alpha = 0.9) +
+  geom_vline(xintercept = 30, linetype = "dashed", color = "#d73027", linewidth = 1.1) +
+  scale_fill_manual(values = fill_colors) +
+  labs(x = "SNP Distance", y = "Sample Pairs (Diff Subj, Same Fac)") +
+  theme_minimal(base_size = 15) +
+  theme(panel.grid = element_blank(), axis.line = element_line(color = "black"), legend.position = "none")
+
+p_diff_fac <- ggplot(filter(pairwise_df, pair_type == "Different Subjects (Different Facilities)"),
+                     aes(x = snp_distance, fill = pair_type)) +
+  geom_histogram(binwidth = 10, boundary = 0, color = "black", alpha = 0.9) +
+  geom_vline(xintercept = 30, linetype = "dashed", color = "#d73027", linewidth = 1.1) +
+  scale_fill_manual(values = fill_colors) +
+  labs(x = "SNP Distance", y = "Sample Pairs (Diff Subj, Diff Fac)") +
+  theme_minimal(base_size = 15) +
+  theme(panel.grid = element_blank(), axis.line = element_line(color = "black"), legend.position = "none")
+
+final_plot_pm <- p_same + p_same_fac + p_diff_fac +
+  plot_layout(ncol = 3, widths = c(1, 1, 1)) &
+  theme(plot.margin = margin(10, 15, 10, 15),
+        axis.title.y = element_text(margin = margin(r = 5)))
+
+final_plot_pm
+
+# ggsave("<figure6F_output_file.png>", final_plot_pm, width = 15, height = 5, dpi = 300)
+```
+
+```r
+# Figure 6H
+
+pairwise_df <- make_snp_pairwise_df(
+  snp_matrix_path = "<snp_distance_matrix_providencia_stuartii.csv>",
+  metadata_path = "<sample_metadata_file.csv>"
+) %>%
+  mutate(
+    snp_bin = case_when(
+      snp_distance <= 10  ~ "0–10",
+      snp_distance <= 20  ~ "10–20",
+      snp_distance <= 30  ~ "20–30",
+      snp_distance <= 50  ~ "30–50",
+      snp_distance <= 100 ~ "50–100",
+      TRUE ~ ">100"
+    ),
+    snp_bin = factor(snp_bin, levels = c("0–10", "10–20", "20–30", "30–50", "50–100", ">100"))
+  )
+
+fill_colors <- c(
+  "Same Subject" = "darkgreen",
+  "Different Subjects (Same Facility)" = "darkgreen",
+  "Different Subjects (Different Facilities)" = "darkgreen"
+)
+
+p_same <- ggplot(filter(pairwise_df, pair_type == "Same Subject"),
+                 aes(x = snp_distance, fill = pair_type)) +
+  geom_histogram(binwidth = 5, boundary = 0, alpha = 0.9, color = "black") +
+  geom_vline(xintercept = 30, linetype = "dashed", color = "#d73027", linewidth = 1.1) +
+  scale_fill_manual(values = fill_colors) +
+  scale_x_continuous(limits = c(0, 30), breaks = seq(0, 30, by = 10)) +
+  labs(x = "SNP Distance", y = "Sample Pairs (Same Subject)") +
+  theme_minimal(base_size = 15) +
+  theme(panel.grid = element_blank(), axis.line = element_line(color = "black"),
+        axis.text = element_text(face = "bold"), legend.position = "none")
+
+p_diff_fac <- ggplot(filter(pairwise_df, pair_type == "Different Subjects (Different Facilities)"),
+                     aes(x = snp_bin, fill = pair_type)) +
+  geom_bar(alpha = 0.9, color = "black", width = 1) +
+  geom_vline(xintercept = 3.5, linetype = "dashed", color = "#d73027", linewidth = 1.1) +
+  scale_fill_manual(values = fill_colors) +
+  labs(x = "SNP Distance (Binned)", y = "Sample Pairs (Diff Subj, Diff Fac)") +
+  theme_minimal(base_size = 15) +
+  theme(panel.grid = element_blank(), axis.line = element_line(color = "black"),
+        axis.text = element_text(face = "bold"), axis.ticks.x = element_blank(),
+        legend.position = "none")
+
+final_plot_ps <- p_same + p_diff_fac +
+  plot_layout(ncol = 2, widths = c(1, 1)) &
+  theme(plot.margin = margin(10, 15, 10, 15))
+
+final_plot_ps
+
+# ggsave("<figure6H_output_file.png>", final_plot_ps, width = 10, height = 5, dpi = 300)
+```
