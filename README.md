@@ -1,0 +1,8 @@
+# 2026_Hounmanou_NursingHome
+
+Strain sharing and persistence of microbial pathogens colonizing the skin of residents in a regional nursing home network
+Yaovi M.G. Hounmanou et al
+
+Antimicrobial resistance (AMR) is a health threat disproportionately affecting nursing home (NH) residents. Microbial surveillance and infection control in NHs are restricted to nares or perirectal cultures, overlooking skin colonization and multidrug-resistant organisms (MDROs) not recovered by selective media. Here we show, that NH residents’ skin serves as a reservoir of transmissible MDROs. We analyzed 207 groin and axilla skin swabs from 38 residents across 15 California NHs using metagenomics, culturing, and genome sequencing. Culture detected MDROs in 10 of 38 residents (26.3%), including 4 (10.5%) with extended-spectrum β-lactamase (ESBL)-producing Escherichia coli sequence type (ST)131/ST648 and 7 (18.4%) with methicillin-resistant Staphylococcus aureus. Skin microbiome analysis by metagenome-assembled genomes identified broader MDRO colonization, including 27 (71.1%) with E. coli ST93, 14 (36.8%) with Staphylococcus epidermidis ST2, 16 (42.1%) with Proteus mirabilis, 7 (18.4%) with Providencia stuartii, 7 (18.4%) with Enterococcus faecalis, and 5 (13.2%) with Pseudomonas aeruginosa. Colonization persisted after bathing. Clonal E. coli ST93 was shared by 27 residents across 9 facilities, and 5 resident pairs carried clonally related strains of ≥2 MDRO species, suggesting polymicrobial transmission. We confirmed skin as a reservoir of MDROs and metagenomic surveillance for detecting colonization and transmission pathways, supporting AMR monitoring in long-term care. 
+
+See Preprint at https://www.medrxiv.org/content/10.1101/2025.11.05.25339587v1 
